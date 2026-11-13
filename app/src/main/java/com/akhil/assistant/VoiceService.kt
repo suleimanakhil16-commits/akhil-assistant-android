@@ -7,33 +7,34 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import java.util.Locale
 
 class VoiceService : Service() {
 
+    private var speechRecognizer: SpeechRecognizer? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var isStopping = false
+
+    companion object {
+        private const val CHANNEL_ID = "akhil_voice"
+        private const val NOTIFICATION_ID = 1001
+        private const val RESTART_DELAY_MS = 1000L
+    }
+
     override fun onCreate() {
         super.onCreate()
-
-        val channelId = "akhil_voice"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "AKHIL Voice Assistant",
-                NotificationManager.IMPORTANCE_LOW
-            )
-
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
-
-        val notification = Notification.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("AKHIL Assistant")
-            .setContentText("Voice service is running")
-            .build()
-
-        startForeground(1001, notification)
+        createNotificationChannel()
+        startForeground(
+            NOTIFICATION_ID,
+            buildNotification("AKHIL Assistant is starting")
+        )
     }
 
     override fun onStartCommand(
@@ -41,7 +42,230 @@ class VoiceService : Service() {
         flags: Int,
         startId: Int
     ): Int {
-        return START_STICKY
+        isStopping = false
+        startSpeechRecognition()
+        return START_NOT_STICKY
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "AKHIL Voice Assistant",
+                NotificationManager.IMPORTANCE_LOW
+            )
+
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+    }
+
+    private fun buildNotification(message: String): Notification {
+        return Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("AKHIL Assistant")
+            .setContentText(message)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun updateNotification(message: String) {
+        getSystemService(NotificationManager::class.java)
+            .notify(
+                NOTIFICATION_ID,
+                buildNotification(message)
+            )
+    }
+
+    private fun startSpeechRecognition() {
+        if (isStopping) return
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            updateNotification("Speech recognition is unavailable")
+            return
+        }
+
+        try {
+            if (speechRecognizer == null) {
+                speechRecognizer =
+                    SpeechRecognizer.createSpeechRecognizer(this)
+
+                speechRecognizer?.setRecognitionListener(
+                    object : RecognitionListener {
+
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            updateNotification("Listening. Say a command.")
+                        }
+
+                        override fun onBeginningOfSpeech() {
+                            updateNotification("I heard you. Processing.")
+                        }
+
+                        override fun onRmsChanged(rmsdB: Float) {}
+
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+
+                        override fun onEndOfSpeech() {}
+
+                        override fun onError(error: Int) {
+                            restartListening()
+                        }
+
+                        override fun onResults(results: Bundle?) {
+                            val spokenText = results
+                                ?.getStringArrayList(
+                                    SpeechRecognizer.RESULTS_RECOGNITION
+                                )
+                                ?.firstOrNull()
+
+                            if (!spokenText.isNullOrBlank()) {
+                                handleCommand(spokenText)
+                            } else {
+                                updateNotification("Please repeat your command")
+                            }
+
+                            restartListening()
+                        }
+
+                        override fun onPartialResults(
+                            partialResults: Bundle?
+                        ) {}
+
+                        override fun onEvent(
+                            eventType: Int,
+                            params: Bundle?
+                        ) {}
+                    }
+                )
+            }
+
+            val recognitionIntent =
+                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE,
+                        Locale.getDefault().toLanguageTag()
+                    )
+                    putExtra(
+                        RecognizerIntent.EXTRA_MAX_RESULTS,
+                        3
+                    )
+                }
+
+            speechRecognizer?.startListening(recognitionIntent)
+
+        } catch (exception: Exception) {
+            updateNotification("Could not start listening")
+            restartListening()
+        }
+    }
+
+    private fun restartListening() {
+        handler.removeCallbacksAndMessages(null)
+
+        if (!isStopping) {
+            handler.postDelayed(
+                { startSpeechRecognition() },
+                RESTART_DELAY_MS
+            )
+        }
+    }
+
+    private fun handleCommand(spokenText: String) {
+        val command = spokenText.lowercase(Locale.ROOT).trim()
+
+        updateNotification("You said: $spokenText")
+
+        when {
+            command.contains("stop listening") ||
+                command == "stop assistant" -> {
+                stopSelf()
+                return
+            }
+
+            command.contains("open whatsapp") ||
+                command == "whatsapp" ->
+                openApp("com.whatsapp", "WhatsApp")
+
+            command.contains("open facebook") ||
+                command == "facebook" ->
+                openApp("com.facebook.katana", "Facebook")
+
+            command.contains("open chrome") ||
+                command == "chrome" ->
+                openApp("com.android.chrome", "Chrome")
+
+            command.contains("open chatgpt") ||
+                command == "chatgpt" ->
+                openApp("com.openai.chatgpt", "ChatGPT")
+
+            command.contains("open claude") ||
+                command == "claude" ->
+                openApp("com.anthropic.claude", "Claude")
+
+            command.contains("open phone") ||
+                command.contains("open dialer") ->
+                openSystemScreen(
+                    Intent(Intent.ACTION_DIAL),
+                    "Phone"
+                )
+
+            command.contains("open settings") ->
+                openSystemScreen(
+                    Intent(android.provider.Settings.ACTION_SETTINGS),
+                    "Settings"
+                )
+
+            else ->
+                updateNotification("Command not recognized")
+        }
+    }
+
+    private fun openApp(packageName: String, appName: String) {
+        val launchIntent =
+            packageManager.getLaunchIntentForPackage(packageName)
+
+        if (launchIntent == null) {
+            updateNotification("$appName is not installed")
+            return
+        }
+
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            startActivity(launchIntent)
+            updateNotification("Opening $appName")
+        } catch (exception: Exception) {
+            updateNotification("Could not open $appName")
+        }
+    }
+
+    private fun openSystemScreen(
+        intent: Intent,
+        screenName: String
+    ) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            startActivity(intent)
+            updateNotification("Opening $screenName")
+        } catch (exception: Exception) {
+            updateNotification("Could not open $screenName")
+        }
+    }
+
+    override fun onDestroy() {
+        isStopping = true
+        handler.removeCallbacksAndMessages(null)
+
+        speechRecognizer?.cancel()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
