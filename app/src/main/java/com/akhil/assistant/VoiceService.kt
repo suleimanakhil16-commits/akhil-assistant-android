@@ -14,13 +14,20 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 class VoiceService : Service() {
 
     private var speechRecognizer: SpeechRecognizer? = null
+    private var textToSpeech: TextToSpeech? = null
+
     private val handler = Handler(Looper.getMainLooper())
+
     private var isStopping = false
+    private var ttsReady = false
+    private var pendingSpeech: String? = null
 
     companion object {
         private const val CHANNEL_ID = "akhil_voice"
@@ -30,10 +37,56 @@ class VoiceService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
         createNotificationChannel()
+
         startForeground(
             NOTIFICATION_ID,
             buildNotification("AKHIL Assistant is starting")
+        )
+
+        initializeSpeech()
+    }
+
+    private fun initializeSpeech() {
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = textToSpeech?.setLanguage(Locale.US)
+
+                if (result != TextToSpeech.LANG_MISSING_DATA &&
+                    result != TextToSpeech.LANG_NOT_SUPPORTED
+                ) {
+                    ttsReady = true
+
+                    textToSpeech?.setSpeechRate(1.0f)
+                    textToSpeech?.setPitch(1.0f)
+
+                    pendingSpeech?.let {
+                        pendingSpeech = null
+                        speak(it)
+                    }
+                } else {
+                    updateNotification("English voice is unavailable")
+                }
+            } else {
+                updateNotification("Speech engine failed to start")
+            }
+        }
+    }
+
+    private fun speak(message: String) {
+        if (isStopping) return
+
+        if (!ttsReady) {
+            pendingSpeech = message
+            return
+        }
+
+        textToSpeech?.speak(
+            message,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "AKHIL_REPLY"
         )
     }
 
@@ -44,7 +97,7 @@ class VoiceService : Service() {
     ): Int {
         isStopping = false
         startSpeechRecognition()
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun createNotificationChannel() {
@@ -71,10 +124,7 @@ class VoiceService : Service() {
 
     private fun updateNotification(message: String) {
         getSystemService(NotificationManager::class.java)
-            .notify(
-                NOTIFICATION_ID,
-                buildNotification(message)
-            )
+            .notify(NOTIFICATION_ID, buildNotification(message))
     }
 
     private fun startSpeechRecognition() {
@@ -102,9 +152,7 @@ class VoiceService : Service() {
                         }
 
                         override fun onRmsChanged(rmsdB: Float) {}
-
                         override fun onBufferReceived(buffer: ByteArray?) {}
-
                         override fun onEndOfSpeech() {}
 
                         override fun onError(error: Int) {
@@ -122,19 +170,13 @@ class VoiceService : Service() {
                                 handleCommand(spokenText)
                             } else {
                                 updateNotification("Please repeat your command")
+                                speak("Please repeat your command")
+                                restartListening()
                             }
-
-                            restartListening()
                         }
 
-                        override fun onPartialResults(
-                            partialResults: Bundle?
-                        ) {}
-
-                        override fun onEvent(
-                            eventType: Int,
-                            params: Bundle?
-                        ) {}
+                        override fun onPartialResults(partialResults: Bundle?) {}
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
                     }
                 )
             }
@@ -147,7 +189,7 @@ class VoiceService : Service() {
                     )
                     putExtra(
                         RecognizerIntent.EXTRA_LANGUAGE,
-                        Locale.getDefault().toLanguageTag()
+                        Locale.US.toLanguageTag()
                     )
                     putExtra(
                         RecognizerIntent.EXTRA_MAX_RESULTS,
@@ -182,7 +224,8 @@ class VoiceService : Service() {
         when {
             command.contains("stop listening") ||
                 command == "stop assistant" -> {
-                stopSelf()
+                speak("Stopping AKHIL Assistant")
+                handler.postDelayed({ stopSelf() }, 1500)
                 return
             }
 
@@ -219,8 +262,11 @@ class VoiceService : Service() {
                     "Settings"
                 )
 
-            else ->
+            else -> {
                 updateNotification("Command not recognized")
+                speak("Sorry, I did not understand that command")
+                restartListening()
+            }
         }
     }
 
@@ -230,6 +276,8 @@ class VoiceService : Service() {
 
         if (launchIntent == null) {
             updateNotification("$appName is not installed")
+            speak("$appName is not installed")
+            restartListening()
             return
         }
 
@@ -238,8 +286,12 @@ class VoiceService : Service() {
         try {
             startActivity(launchIntent)
             updateNotification("Opening $appName")
+            speak("Opening $appName")
+            restartListening()
         } catch (exception: Exception) {
             updateNotification("Could not open $appName")
+            speak("Could not open $appName")
+            restartListening()
         }
     }
 
@@ -252,21 +304,31 @@ class VoiceService : Service() {
         try {
             startActivity(intent)
             updateNotification("Opening $screenName")
+            speak("Opening $screenName")
+            restartListening()
         } catch (exception: Exception) {
             updateNotification("Could not open $screenName")
+            speak("Could not open $screenName")
+            restartListening()
         }
     }
 
     override fun onDestroy() {
         isStopping = true
+
         handler.removeCallbacksAndMessages(null)
 
         speechRecognizer?.cancel()
         speechRecognizer?.destroy()
         speechRecognizer = null
 
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
+    
