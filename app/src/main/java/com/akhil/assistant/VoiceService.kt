@@ -24,6 +24,7 @@ class VoiceService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     private var isStopping = false
+    private var isListening = false
     private var ttsReady = false
     private var pendingSpeech: String? = null
 
@@ -154,20 +155,27 @@ class VoiceService : Service() {
                         override fun onEndOfSpeech() {}
 
                         override fun onError(error: Int) {
+                            isListening = false
+                            updateNotification(recognitionErrorMessage(error))
                             restartListening()
                         }
 
                         override fun onResults(results: Bundle?) {
-                            val spokenText = results
+                            isListening = false
+                            val candidates = results
                                 ?.getStringArrayList(
                                     SpeechRecognizer.RESULTS_RECOGNITION
                                 )
-                                ?.firstOrNull()
+                                .orEmpty()
+
+                            val spokenText = candidates.firstOrNull {
+                                resolveCommand(it) != null
+                            } ?: candidates.firstOrNull()
 
                             if (!spokenText.isNullOrBlank()) {
                                 handleCommand(spokenText)
                             } else {
-                                updateNotification("Please repeat your command")
+                                updateNotification("No speech detected. Please try again.")
                                 speak("Please repeat your command")
                                 restartListening()
                             }
@@ -195,11 +203,28 @@ class VoiceService : Service() {
                     )
                 }
 
-            speechRecognizer?.startListening(recognitionIntent)
+            if (!isListening) {
+                isListening = true
+                speechRecognizer?.startListening(recognitionIntent)
+            }
 
         } catch (exception: Exception) {
+            isListening = false
             updateNotification("Could not start listening")
             restartListening()
+        }
+    }
+
+    private fun recognitionErrorMessage(error: Int): String {
+        return when (error) {
+            SpeechRecognizer.ERROR_AUDIO -> "Microphone audio error. Check microphone access."
+            SpeechRecognizer.ERROR_NETWORK,
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network problem. Retrying voice recognition."
+            SpeechRecognizer.ERROR_NO_MATCH,
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No clear speech detected. Listening again."
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Voice recognizer is busy. Retrying."
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is missing."
+            else -> "Voice recognition error ($error). Retrying."
         }
     }
 
@@ -214,51 +239,67 @@ class VoiceService : Service() {
         }
     }
 
-    private fun handleCommand(spokenText: String) {
-        val command = spokenText
-            .lowercase(Locale.ROOT)
+    private fun normalizeCommand(text: String): String {
+        return text.lowercase(Locale.ROOT)
             .trim()
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
+    }
 
+    private fun resolveCommand(spokenText: String): String? {
+        var command = normalizeCommand(spokenText)
+
+        command = command
+            .replace(Regex("^(please |hey )+"), "")
+            .replace(Regex("^(akhil )+"), "")
+            .trim()
+
+        if (command in setOf("stop listening", "stop assistant", "stop akhil")) {
+            return "stop"
+        }
+
+        command = command.replace(
+            Regex("^(please )?(open|launch|start|show|go to|switch to) "),
+            ""
+        ).trim()
+
+        return when (command) {
+            "whatsapp", "whats app" -> "whatsapp"
+            "facebook", "face book" -> "facebook"
+            "chrome", "google chrome" -> "chrome"
+            "chatgpt", "chat gpt" -> "chatgpt"
+            "claude" -> "claude"
+            "phone", "dialer", "make a call" -> "phone"
+            "settings", "setting" -> "settings"
+            else -> null
+        }
+    }
+
+    private fun handleCommand(spokenText: String) {
         updateNotification("You said: $spokenText")
 
-        when (command) {
-            "stop listening", "stop assistant" -> {
+        when (resolveCommand(spokenText)) {
+            "stop" -> {
+                isStopping = true
+                isListening = false
                 speak("Stopping AKHIL Assistant")
                 handler.postDelayed({ stopSelf() }, 1500)
                 return
             }
 
-            "whatsapp", "open whatsapp" ->
-                openApp("com.whatsapp", "WhatsApp")
-
-            "facebook", "open facebook" ->
-                openApp("com.facebook.katana", "Facebook")
-
-            "chrome", "open chrome" ->
-                openApp("com.android.chrome", "Chrome")
-
-            "chatgpt", "open chatgpt", "chat gpt", "open chat gpt" ->
-                openApp("com.openai.chatgpt", "ChatGPT")
-
-            "claude", "open claude" ->
-                openApp("com.anthropic.claude", "Claude")
-
-            "phone", "open phone", "dialer", "open dialer" ->
-                openSystemScreen(
-                    Intent(Intent.ACTION_DIAL),
-                    "Phone"
-                )
-
-            "settings", "setting", "open settings", "open setting" ->
-                openSystemScreen(
-                    Intent(android.provider.Settings.ACTION_SETTINGS),
-                    "Settings"
-                )
+            "whatsapp" -> openApp("com.whatsapp", "WhatsApp")
+            "facebook" -> openApp("com.facebook.katana", "Facebook")
+            "chrome" -> openApp("com.android.chrome", "Chrome")
+            "chatgpt" -> openApp("com.openai.chatgpt", "ChatGPT")
+            "claude" -> openApp("com.anthropic.claude", "Claude")
+            "phone" -> openSystemScreen(Intent(Intent.ACTION_DIAL), "Phone")
+            "settings" -> openSystemScreen(
+                Intent(android.provider.Settings.ACTION_SETTINGS),
+                "Settings"
+            )
 
             else -> {
-                updateNotification("Command not recognized")
+                updateNotification("Command not recognized: $spokenText")
                 speak("Sorry, I did not understand that command")
                 restartListening()
             }
