@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.akhil.assistant.second"
+        applicationId = "com.akhil.assistant.test24"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
