@@ -280,10 +280,11 @@ class VoiceService : Service() {
 
         when (resolveCommand(spokenText)) {
             "stop" -> {
+                updateNotification("Stopping AKHIL Assistant")
                 isStopping = true
                 isListening = false
-                speak("Stopping AKHIL Assistant")
-                handler.postDelayed({ stopSelf() }, 1500)
+                speechRecognizer?.cancel()
+                handler.postDelayed({ stopSelf() }, 300)
                 return
             }
 
@@ -362,6 +363,7 @@ class VoiceService : Service() {
         textToSpeech?.shutdown()
         textToSpeech = null
 
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
