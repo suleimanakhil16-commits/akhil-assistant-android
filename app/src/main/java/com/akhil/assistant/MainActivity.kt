@@ -11,118 +11,119 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var statusText: TextView
-
     companion object {
         private const val MICROPHONE_PERMISSION_REQUEST = 100
         private const val NOTIFICATION_PERMISSION_REQUEST = 101
     }
 
-    private val backgroundColor = Color.rgb(9, 7, 24)
-    private val cardColor = Color.rgb(28, 22, 54)
-    private val accentColor = Color.rgb(183, 120, 255)
-    private val whiteColor = Color.WHITE
-    private val mutedColor = Color.rgb(183, 174, 207)
+    private val bg = Color.rgb(4, 8, 8)
+    private val panel = Color.rgb(13, 25, 24)
+    private val green = Color.rgb(0, 232, 112)
+    private val white = Color.WHITE
+    private val muted = Color.rgb(190, 211, 201)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val scrollView = ScrollView(this).apply {
-            setBackgroundColor(backgroundColor)
-            isFillViewport = true
-        }
-        val layout = LinearLayout(this).apply {
+        val scroll = ScrollView(this).apply { setBackgroundColor(bg); isFillViewport = true }
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(28), dp(22), dp(28))
+            setPadding(dp(16), dp(18), dp(16), dp(22))
         }
 
-        layout.addView(makeText("AKHIL", 30f, whiteColor, true))
-        layout.addView(makeText("YOUR PERSONAL AI ASSISTANT", 11f, mutedColor, true), marginParams(top = 4, bottom = 24))
-
-        val hero = LinearLayout(this).apply {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val mic = TextView(this).apply {
+            text = "🎙"; textSize = 30f; gravity = Gravity.CENTER
+            setTextColor(green); background = circle(panel, green)
+        }
+        header.addView(mic, LinearLayout.LayoutParams(dp(58), dp(58)))
+        val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(20), dp(24), dp(20), dp(26))
-            background = rounded(cardColor, 28, Color.rgb(91, 63, 133))
+            setPadding(dp(12), 0, 0, 0)
         }
-        hero.addView(makeText("MEET YOUR ASSISTANT", 12f, accentColor, true))
+        brand.addView(text("AKHIL VOICE CONTROL AI", 19f, white, true))
+        brand.addView(text("Your Smart Voice Assistant 💚", 13f, green, false), params(top = 3))
+        header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(text("⚙", 27f, white, true))
+        root.addView(header)
 
-        // Temporary portrait placeholder; the final realistic avatar image will be added as a drawable asset.
-        val avatar = TextView(this).apply {
-            text = "👩🏻"
-            textSize = 66f
-            gravity = Gravity.CENTER
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(111, 63, 171), Color.rgb(48, 31, 87))
-            ).apply {
-                shape = GradientDrawable.OVAL
-                setStroke(dp(3), accentColor)
-            }
+        val portrait = ImageView(this).apply {
+            setImageResource(R.drawable.akhil_female_avatar)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "AKHIL female assistant portrait"
+            background = rounded(panel, 24, green)
+            clipToOutline = true
         }
-        hero.addView(avatar, LinearLayout.LayoutParams(dp(154), dp(154)).apply {
-            topMargin = dp(18)
-            bottomMargin = dp(18)
+        root.addView(portrait, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(330)
+        ).apply { topMargin = dp(18) })
+
+        val greeting = TextView(this).apply {
+            text = "Hello Suleiman 👋\nHow can I help you today?"
+            textSize = 18f; setTextColor(white); gravity = Gravity.CENTER
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = rounded(panel, 22, Color.rgb(30, 67, 51))
+        }
+        root.addView(greeting, params(top = 14))
+
+        val listen = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            background = rounded(panel, 30, green)
+        }
+        listen.addView(text("▮  ▮  ▮", 19f, green, true))
+        statusText = text("  READY TO LISTEN", 16f, white, true)
+        listen.addView(statusText)
+        root.addView(listen, LinearLayout.LayoutParams(-2, -2).apply {
+            gravity = Gravity.CENTER; topMargin = dp(16)
         })
 
-        hero.addView(makeText("AKHIL ASSISTANT", 19f, whiteColor, true))
-        statusText = makeText("READY TO LISTEN", 13f, accentColor, true)
-        hero.addView(statusText, marginParams(top = 9))
-        val description = makeText("Speak naturally. I'm ready for your commands.", 13f, mutedColor, false)
-        description.gravity = Gravity.CENTER
-        hero.addView(description, marginParams(top = 8))
-        layout.addView(hero)
-
-        val startButton = makeButton("🎙   START LISTENING", accentColor, Color.rgb(24, 12, 40))
-        startButton.setOnClickListener { requestMicrophonePermission() }
-        layout.addView(startButton, marginParams(top = 22))
-
-        val stopButton = makeButton("STOP LISTENING", cardColor, whiteColor)
-        stopButton.background = rounded(cardColor, 16, Color.rgb(91, 75, 125))
-        stopButton.setOnClickListener {
+        val start = button("🎙  START LISTENING", green, Color.BLACK)
+        start.setOnClickListener { requestMicrophonePermission() }
+        root.addView(start, params(top = 14))
+        val stop = button("STOP LISTENING", panel, white)
+        stop.setOnClickListener {
             stopService(Intent(this, VoiceService::class.java))
-            statusText.text = "ASSISTANT STOPPED"
+            statusText.text = "  LISTENING STOPPED"
         }
-        layout.addView(stopButton, marginParams(top = 11))
+        root.addView(stop, params(top = 8))
 
-        val commandsCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(18))
-            background = rounded(cardColor, 22, Color.rgb(72, 55, 104))
+        val shortcuts = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
         }
-        commandsCard.addView(makeText("QUICK COMMANDS", 13f, accentColor, true))
-        val commands = listOf("WhatsApp", "Chrome", "Facebook", "ChatGPT", "Settings")
-        commands.forEach { name ->
-            val item = TextView(this).apply {
-                text = "✦    Open $name"
-                textSize = 14f
-                setTextColor(whiteColor)
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                background = rounded(Color.rgb(38, 30, 68), 13)
+        val items = listOf("WhatsApp" to "☎", "Chrome" to "🌐", "Facebook" to "f", "ChatGPT" to "✳", "Setting" to "⚙")
+        items.forEach { (name, symbol) ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                setPadding(dp(3), dp(10), dp(3), dp(5))
             }
-            commandsCard.addView(item, marginParams(top = 9))
+            val icon = TextView(this).apply {
+                text = symbol; textSize = 23f; setTextColor(white); gravity = Gravity.CENTER
+                background = circle(panel, green)
+            }
+            item.addView(icon, LinearLayout.LayoutParams(dp(52), dp(52)))
+            val label = text(name, 10f, white, true).apply { gravity = Gravity.CENTER }
+            item.addView(label, params(top = 5))
+            shortcuts.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        layout.addView(commandsCard, marginParams(top = 22))
-
-        val footer = makeText("YOUR VOICE  •  YOUR CONTROL", 10f, mutedColor, true)
-        footer.gravity = Gravity.CENTER
-        layout.addView(footer, marginParams(top = 24))
-
-        scrollView.addView(layout)
-        setContentView(scrollView)
+        root.addView(shortcuts, params(top = 14))
+        scroll.addView(root)
+        setContentView(scroll)
 
         MorningAlarmReceiver.schedule(this)
-
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
-        }
+        ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
     }
 
     private fun requestMicrophonePermission() {
@@ -132,55 +133,39 @@ class MainActivity : Activity() {
     }
 
     private fun startVoiceService() {
-        val serviceIntent = Intent(this, VoiceService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
-        else startService(serviceIntent)
-        statusText.text = "VOICE ASSISTANT IS RUNNING"
+        val intent = Intent(this, VoiceService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        statusText.text = "  LISTENING..."
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == MICROPHONE_PERMISSION_REQUEST) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) startVoiceService()
-            else statusText.text = "MICROPHONE PERMISSION NEEDED"
+            else statusText.text = "  MICROPHONE PERMISSION NEEDED"
         }
     }
 
-    private fun makeText(value: String, size: Float, color: Int, bold: Boolean): TextView =
-        TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-        }
+    private fun text(value: String, size: Float, color: Int, bold: Boolean) = TextView(this).apply {
+        text = value; textSize = size; setTextColor(color)
+        typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+    }
 
-    private fun makeButton(label: String, color: Int, textColor: Int): Button =
-        Button(this).apply {
-            text = label
-            textSize = 14f
-            isAllCaps = false
-            setTextColor(textColor)
-            typeface = Typeface.DEFAULT_BOLD
-            background = rounded(color, 16)
-            minHeight = dp(56)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
+    private fun button(label: String, color: Int, textColor: Int) = Button(this).apply {
+        text = label; textSize = 14f; isAllCaps = false; setTextColor(textColor)
+        typeface = Typeface.DEFAULT_BOLD; background = rounded(color, 16)
+        minHeight = dp(54); setPadding(dp(12), dp(8), dp(12), dp(8))
+    }
 
-    private fun rounded(color: Int, radius: Int, strokeColor: Int? = null): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-            if (strokeColor != null) setStroke(dp(1), strokeColor)
-        }
+    private fun rounded(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(radius).toFloat()
+        if (stroke != null) setStroke(dp(2), stroke)
+    }
 
-    private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topMargin = dp(top)
-            bottomMargin = dp(bottom)
-        }
+    private fun circle(color: Int, stroke: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL; setColor(color); setStroke(dp(2), stroke)
+    }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun params(top: Int = 0) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top) }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
